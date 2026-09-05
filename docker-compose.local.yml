@@ -1,0 +1,12 @@
+services:
+  mealpilot:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      DATA_DIR: "/data"
+      # OPENAI_API_KEY: "sk-..."  # Optional; you can also enter the key in the UI.
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
