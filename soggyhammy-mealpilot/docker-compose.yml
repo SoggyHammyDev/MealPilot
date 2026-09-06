@@ -5,12 +5,12 @@ services:
     environment:
       APP_HOST: soggyhammy-mealpilot_web_1
       APP_PORT: 3000
-      # MCP has its own bearer-token authentication. This lets non-browser MCP
-      # clients reach the endpoint without being redirected to Umbrel login.
+      # MCP applies its own bearer-token authentication. This allows machine
+      # clients to reach /mcp without Umbrel's browser-login redirect.
       PROXY_AUTH_WHITELIST: "/mcp"
 
   web:
-    image: ghcr.io/soggyhammydev/mealpilot:0.1.0
+    image: ghcr.io/soggyhammydev/mealpilot:0.2.0
     restart: on-failure
     init: true
     stop_grace_period: 20s
@@ -18,5 +18,6 @@ services:
       NODE_ENV: "production"
       PORT: "3000"
       DATA_DIR: "/data"
+      MCP_AUTH_MODE: "token"
     volumes:
       - ${APP_DATA_DIR}/data:/data

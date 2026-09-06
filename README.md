@@ -1,90 +1,120 @@
 # MealPilot for Umbrel
 
-MealPilot is a self-hosted AI meal planner built for umbrelOS. It generates structured meal plans with:
+MealPilot is a self-hosted, **MCP-first meal planner** for umbrelOS. Version 0.2 intentionally does **not** call an AI provider API. There is no OpenAI API key field, no model selector, and no model billing inside MealPilot.
 
-- calories for every meal and daily calorie totals
-- ingredient quantities scaled to household servings
-- prep time, cook time, and total time
-- cooking instructions
-- 1–14 day plans
-- dietary style, allergies, dislikes, pantry ingredients, budget guidance, and time limits
-- combined grocery lists
-- saved plan history in SQLite
-- single-meal AI replacement
-- an authenticated Streamable HTTP MCP server
-
-The web app calls the OpenAI **Responses API** directly and asks for **strict JSON Schema structured output**, so the UI is rendering validated plan data rather than trying to parse free-form Markdown.
-
-## Screens
-
-![Generate](soggyhammy-mealpilot/1.jpg)
-![Plan](soggyhammy-mealpilot/2.jpg)
-![Settings and MCP](soggyhammy-mealpilot/3.jpg)
-
-## Architecture
+Instead, the AI client does the intelligence work:
 
 ```text
-Browser / Umbrel UI
-       |
-       v
-+---------------------------+
-| Node 22 + Express         |
-|                           |
-| /api/*                    |
-| - settings                |
-| - generation              |
-| - saved plans             |
-| - grocery lists           |
-| - replace meal            |
-|                           |
-| /mcp                      |
-| - Streamable HTTP MCP     |
-+-------------+-------------+
-              |
-       +------+------+
-       |             |
-       v             v
-  SQLite /data   OpenAI Responses API
+ChatGPT / another MCP-capable AI
+        |
+        | 1. get_mealpilot_context
+        v
+MealPilot on Umbrel
+        |
+        | preferences + pantry + constraints
+        v
+AI generates the complete meal plan itself
+        |
+        | 2. save_meal_plan
+        v
+MealPilot SQLite + web UI + grocery list
 ```
 
-The app uses the current split MCP TypeScript SDK (`@modelcontextprotocol/server` + `@modelcontextprotocol/node`) and a stateless Streamable HTTP handler.
+Every stored meal can include:
+
+- calories per serving
+- exact ingredient quantities for the configured servings
+- prep time
+- cook time
+- total time
+- step-by-step instructions
+- optional chef notes
+
+MealPilot also combines repeated ingredients into one grocery list.
+
+## Why v0.2 exists
+
+The original v0.1 generated plans by calling the OpenAI Responses API directly. That required a separate API key and API billing.
+
+v0.2 reverses the relationship: the MCP client is the model, and MealPilot is the local state/store. The app never needs to know which model produced a plan.
+
+On first v0.2 startup, MealPilot clears any OpenAI API key that may still exist in the legacy v0.1 SQLite column.
+
+## Current ChatGPT product limitation
+
+MealPilot's MCP server supports both read and write tools, but whether ChatGPT can use those tools depends on your ChatGPT plan and workspace features.
+
+As of September 2026, OpenAI documents full custom MCP write/modify support for **Business and Enterprise/Edu**. OpenAI documents **Pro** custom MCP as read/fetch only. ChatGPT also connects to remote MCP servers rather than directly to a LAN-only MCP endpoint; a private Umbrel needs OpenAI Secure MCP Tunnel or another safe remote-access path supported by your client.
+
+If your current ChatGPT account cannot write to a custom MCP, MealPilot still requires **no API key**: use the built-in **Build ChatGPT prompt** button, paste that prompt into ChatGPT, then paste the returned JSON into **Import & save plan**.
+
+Official product documentation:
+
+- https://help.openai.com/en/articles/12584461
+
+## Main workflows
+
+### A. Write-capable MCP client
+
+1. Configure your preferences in MealPilot.
+2. Connect the client to MealPilot's `/mcp` endpoint.
+3. Ask: `Create my MealPilot meal plan for next week and save it.`
+4. The client should call `get_mealpilot_context`.
+5. The client generates the meals itself.
+6. The client calls `save_meal_plan`.
+7. Open MealPilot and the plan is already in **Saved plans**.
+
+### B. ChatGPT/manual import fallback
+
+1. Configure preferences in MealPilot.
+2. On Home, choose the start date.
+3. Click **Build ChatGPT prompt**.
+4. Copy the prompt into ChatGPT.
+5. ChatGPT returns only the requested JSON.
+6. Paste it into **Import a plan from ChatGPT**.
+7. Click **Import & save plan**.
+
+No OpenAI API key is needed in either workflow.
 
 ## Repository layout
 
 ```text
-.
-├── .github/workflows/publish.yml   # multi-arch GHCR build
-├── public/                         # browser UI
-│   ├── index.html
-│   ├── styles.css
+mealpilot-umbrel/
+├── .github/workflows/publish.yml
+├── public/
 │   ├── app.js
-│   └── favicon.svg
+│   ├── favicon.svg
+│   ├── index.html
+│   └── styles.css
 ├── src/
-│   ├── server.js                   # Express/API entrypoint
-│   ├── db.js                       # SQLite persistence
-│   ├── meal-plan.js                # schemas + grocery logic
-│   ├── openai.js                   # Responses API integration
-│   └── mcp.js                      # MCP server + bearer auth
-├── tests/meal-plan.test.js
-├── soggyhammy-mealpilot/           # Umbrel community-store listing
+│   ├── db.js
+│   ├── mcp.js
+│   ├── meal-plan.js
+│   └── server.js
+├── tests/
+│   └── meal-plan.test.js
+├── soggyhammy-mealpilot/
 │   ├── docker-compose.yml
-│   ├── umbrel-app.yml
 │   ├── icon.png
-│   └── 1.jpg / 2.jpg / 3.jpg
-├── umbrel-app-store.yml
+│   └── umbrel-app.yml
 ├── Dockerfile
 ├── docker-compose.local.yml
-└── package.json
+├── package.json
+└── umbrel-app-store.yml
 ```
 
-## Quick local test
+## Local development
 
-You only need Docker:
+Requirements:
+
+- Node.js 22+
+- build tooling for `better-sqlite3` if a prebuilt binary is unavailable
 
 ```bash
-git clone https://github.com/SoggyHammyDev/mealpilot.git
-cd mealpilot
-docker compose -f docker-compose.local.yml up --build
+npm install
+npm test
+npm run check
+npm start
 ```
 
 Open:
@@ -93,226 +123,254 @@ Open:
 http://localhost:3000
 ```
 
-Then go to **Settings**, enter an OpenAI API key, select a model, and click **Test connection**.
-
-You can also inject the key instead of saving it in SQLite:
-
-```yaml
-environment:
-  OPENAI_API_KEY: "sk-..."
-```
-
-An environment key takes priority over a key entered in the UI.
-
-## OpenAI models
-
-The UI ships with these presets:
-
-- `gpt-5.6-luna` — default; cost-sensitive meal generation
-- `gpt-5.6-terra` — stronger balance of intelligence and cost
-- `gpt-5.6-sol` — highest-quality preset
-
-The model setting is persisted locally. MealPilot sends `store: false` in Responses API calls.
-
-## Build and publish the Docker image
-
-The Umbrel definition currently points to:
-
-```text
-ghcr.io/soggyhammydev/mealpilot:0.1.0
-```
-
-The included GitHub Action builds both `linux/amd64` and `linux/arm64`.
-
-After pushing this repository to GitHub, create the first release tag:
+Or build with Docker:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+docker compose -f docker-compose.local.yml up --build
 ```
 
-The workflow publishes `ghcr.io/<repository-owner>/mealpilot:0.1.0`.
+## Persistent data
 
-If the repository owner is not `SoggyHammyDev`, edit the image line in:
+Umbrel mounts:
 
 ```text
-soggyhammy-mealpilot/docker-compose.yml
+${APP_DATA_DIR}/data -> /data
 ```
 
-For Umbrel to pull the image without registry credentials, make the GHCR package public.
-
-## Install as an Umbrel Community App Store
-
-This repository is already laid out as a community app store:
-
-```yaml
-id: "soggyhammy"
-name: "SoggyHammy Apps"
-```
-
-The app ID is correspondingly prefixed:
+MealPilot stores:
 
 ```text
-soggyhammy-mealpilot
+/data/mealpilot.db
+/data/mcp-token.txt
 ```
 
-After the image exists in GHCR:
-
-1. Push this full repo to GitHub.
-2. In umbrelOS, open the App Store / Community App Store settings.
-3. Add the GitHub repository URL.
-4. Refresh the store.
-5. Install **MealPilot**.
-6. Open MealPilot → **Settings** → enter your OpenAI API key.
-
-The app stores persistent state under Umbrel's `${APP_DATA_DIR}/data` mount.
+SQLite runs in WAL mode.
 
 ## MCP endpoint
 
-MealPilot exposes MCP at:
+The app exposes Streamable HTTP MCP at:
 
 ```text
-http://<your-umbrel-host>:4788/mcp
+http://<umbrel-host>:4788/mcp
 ```
 
-The exact endpoint and bearer token are shown inside **Settings → MCP Server**.
+The exact URL shown by the app may differ when you access MealPilot through a reverse proxy or remote hostname.
 
-Every MCP request must include:
+### Authentication
+
+The Umbrel package defaults to:
+
+```text
+MCP_AUTH_MODE=token
+```
+
+Every MCP request must therefore include:
 
 ```http
-Authorization: Bearer mp_your_token_here
+Authorization: Bearer mp_...
 ```
 
-The token is generated on first startup and stored at:
+The generated token is shown under **MCP** in the UI and is stored at:
 
 ```text
 /data/mcp-token.txt
 ```
 
-You can rotate it from the UI. Token comparison uses a constant-time check.
+You can rotate it from the UI.
 
-### MCP tools
+There is an advanced environment setting:
 
-#### `generate_meal_plan`
+```text
+MCP_AUTH_MODE=none
+```
 
-Generate and save a new plan. Optional inputs include:
+Do **not** use tokenless mode on a publicly reachable endpoint. It is intended only for deployments where a trusted secure tunnel or authenticated reverse proxy provides the access boundary.
 
-- `days`
-- `calorieTarget`
-- `servings`
-- `startDate`
-- `dietaryStyle`
-- `allergies`
-- `avoidFoods`
-- `pantry`
-- `maxTotalMinutes`
-- `budget`
-- `customInstructions`
+## MCP tools
 
-#### `list_meal_plans`
+### `get_mealpilot_context`
 
-List recent saved plans and their IDs.
+Call this before generating a plan. It returns:
 
-#### `get_meal_plan`
+- saved planning preferences
+- pantry contents
+- a complete generation brief
+- instructions to save the structured result
 
-Read the full stored plan by `planId`.
+Optional input:
 
-#### `get_grocery_list`
+- `startDate` in `YYYY-MM-DD`
 
-Return combined ingredient quantities for a saved plan.
+### `get_preferences`
 
-#### `replace_meal`
+Read:
 
-Replace one `mealId` inside a saved plan. MealPilot asks OpenAI for a replacement that keeps that day close to the original calorie target.
+- calorie target
+- default days
+- servings
+- meal types
+- dietary style
+- allergies
+- avoid list
+- maximum meal time
+- budget guidance
+- custom instructions
+- pantry text
 
-#### `get_preferences`
+### `update_preferences`
 
-Read MealPilot's non-secret preferences. The OpenAI API key is never returned.
+Update planning defaults except pantry.
 
-#### `update_preferences`
+### `get_pantry`
 
-Update meal-planning preferences. It cannot modify the OpenAI API key.
+Read pantry contents.
 
-## Example MCP request
+### `update_pantry`
 
-A compatible client handles MCP negotiation for you. For a raw connectivity check, send an MCP request with the token and accept both JSON and SSE response types as required by the protocol/client version.
+Replace pantry contents.
 
-The server uses the 2026 MCP HTTP handler and also retains the SDK's stateless compatibility path for 2025-era clients.
+### `list_meal_plans`
 
-## ChatGPT-specific note
+List saved plan IDs and summary metadata.
 
-MealPilot itself is ready for remote MCP clients, but ChatGPT does **not** directly connect to an MCP server that is only reachable on your LAN. A private Umbrel endpoint needs a supported secure tunnel or another safe remote-access path.
+### `get_meal_plan`
 
-ChatGPT plan/workspace availability also controls which custom MCP capabilities can be enabled. None of that blocks MealPilot's built-in web UI: the normal Generate button talks to the OpenAI API directly.
+Read a complete plan, including meal IDs.
+
+### `get_grocery_list`
+
+Get MealPilot's merged grocery list for one saved plan.
+
+### `save_meal_plan`
+
+Save a plan the MCP client already generated. MealPilot does not invoke a model.
+
+The structure includes:
+
+```json
+{
+  "title": "Week of September 7",
+  "summary": "High-protein week with quick dinners.",
+  "targetCalories": 2000,
+  "servings": 2,
+  "days": [
+    {
+      "date": "2026-09-07",
+      "meals": [
+        {
+          "mealType": "dinner",
+          "name": "Chicken Fajita Rice Bowl",
+          "calories": 620,
+          "servings": 2,
+          "prepMinutes": 10,
+          "cookMinutes": 20,
+          "ingredients": [
+            { "name": "chicken breast", "amount": 12, "unit": "oz", "notes": null }
+          ],
+          "instructions": ["Cook the rice.", "Cook the seasoned chicken and vegetables."],
+          "chefNote": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+Calories are per person/per serving. Ingredient amounts are the total quantity needed for the configured number of servings.
+
+### `replace_meal`
+
+Inputs:
+
+- `planId`
+- `mealId`
+- complete structured `replacement` meal
+
+The client generates the replacement itself and MealPilot recalculates that day's totals.
+
+### `delete_meal_plan`
+
+Delete a saved plan.
 
 ## REST API
-
-Useful endpoints:
 
 ```text
 GET    /api/health
 GET    /api/settings
 PUT    /api/settings
-PUT    /api/settings/openai-key
-DELETE /api/settings/openai-key
-POST   /api/settings/test-openai
+POST   /api/generation-prompt
 GET    /api/mcp-config
 POST   /api/mcp-config/rotate-token
-POST   /api/generate
 GET    /api/plans
+POST   /api/plans/import
 GET    /api/plans/:id
 DELETE /api/plans/:id
 GET    /api/plans/:id/grocery-list
-POST   /api/plans/:id/meals/:mealId/replace
+PUT    /api/plans/:id/meals/:mealId
+*      /mcp
 ```
 
-## Data model
+There are deliberately **no** `/api/settings/openai-key`, `/api/settings/test-openai`, or `/api/generate` endpoints in v0.2.
 
-SQLite contains two tables:
+## Build and publish to GHCR
 
-- `settings` — planning settings and optional stored OpenAI key
-- `plans` — one JSON document per saved meal plan plus searchable summary columns
+The Umbrel definition expects:
 
-SQLite runs in WAL mode.
+```text
+ghcr.io/soggyhammydev/mealpilot:0.2.0
+```
 
-### Secret handling
+The included GitHub Action builds `linux/amd64` and `linux/arm64`.
 
-- REST `GET /api/settings` never returns the API key.
-- MCP `get_preferences` never returns the API key.
-- The MCP token is available only through the Umbrel-authenticated settings API/UI and its file inside the app data directory.
-- The `/mcp` route is whitelisted from Umbrel login specifically so machine MCP clients can reach it; MealPilot applies its own bearer-token gate there.
-- API keys stored through the UI are stored locally in SQLite. If you prefer not to persist the key in the database, inject `OPENAI_API_KEY` through the container environment instead.
+### Manual Action run
 
-## Tests
+1. Push this v0.2 project to GitHub.
+2. Open **Actions → Build and publish MealPilot**.
+3. Click **Run workflow**.
+4. Enter:
 
-The pure meal-plan logic has Node's built-in test coverage:
+```text
+0.2.0
+```
+
+The workflow publishes:
+
+```text
+ghcr.io/soggyhammydev/mealpilot:0.2.0
+ghcr.io/soggyhammydev/mealpilot:latest
+```
+
+Keep the GHCR package public so Umbrel can pull it without registry credentials.
+
+You can verify from the Umbrel host:
 
 ```bash
-npm test
-npm run check
+sudo docker pull ghcr.io/soggyhammydev/mealpilot:0.2.0
 ```
 
-Tests currently cover:
+## Update an existing v0.1 Umbrel install
 
-- bounds and preference sanitization
-- grocery aggregation
-- daily calorie/time recalculation
-- JavaScript syntax checks
+The app ID stays:
 
-## Nutrition disclaimer
+```text
+soggyhammy-mealpilot
+```
 
-MealPilot's calorie values and ingredient nutrition are AI-generated estimates, not laboratory measurements or medical advice. For allergies, ingredient labels and manufacturer information should be treated as authoritative. The generator prompt treats entered allergies as hard exclusions, but users should still verify the final ingredients themselves.
+and the manifest version becomes `0.2.0`, so the community store can treat this as an update rather than a new app.
 
-## Versioning
+The existing `/data/mealpilot.db` is reused. Existing plans remain readable. Any legacy stored OpenAI API key is nulled on v0.2 startup.
 
-Current version: **0.1.0**
+## Security notes
 
-Suggested next releases:
+- MealPilot does not store an AI provider API key.
+- `/mcp` bypasses Umbrel's browser login so machine clients can reach it; MealPilot's own bearer token protects that route by default.
+- Treat the MCP bearer token like a password.
+- Do not expose a tokenless MCP endpoint publicly.
+- Allergies entered in MealPilot are passed to the AI as hard exclusions, but AI-generated nutrition and ingredients are estimates. Verify labels and ingredient safety yourself.
 
-- **0.2.0** — macros and per-day protein targets
-- **0.3.0** — pantry inventory and leftover tracking
-- **0.4.0** — recipe favorites / locked meals
-- **0.5.0** — estimated grocery pricing providers
+## Version
+
+Current version: **0.2.0**
 
 ## License
 

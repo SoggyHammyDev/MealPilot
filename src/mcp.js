@@ -4,12 +4,29 @@ import path from 'node:path';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import * as z from 'zod/v4';
-import { getSettings, getPlan, listPlans, savePlan, updateSettings } from './db.js';
-import { buildGroceryList, sanitizeSettings } from './meal-plan.js';
-import { generatePlanWithAI, replaceMealWithAI } from './openai.js';
+import {
+  deletePlan,
+  getPlan,
+  getSettings,
+  listPlans,
+  savePlan,
+  updatePantry,
+  updateSettings
+} from './db.js';
+import {
+  buildGenerationPrompt,
+  buildGroceryList,
+  normalizeExternalPlan,
+  replaceMealWithData,
+  sanitizeSettings
+} from './meal-plan.js';
 
 const dataDir = process.env.DATA_DIR || path.resolve('data');
 const tokenPath = path.join(dataDir, 'mcp-token.txt');
+
+export function getMcpAuthMode() {
+  return String(process.env.MCP_AUTH_MODE || 'token').toLowerCase() === 'none' ? 'none' : 'token';
+}
 
 export function getMcpToken() {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -30,40 +47,98 @@ function asText(value) {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
 }
 
-function buildMcpServer() {
-  const server = new McpServer({ name: 'mealpilot', version: '0.1.0' });
+const ingredientInput = z.object({
+  name: z.string().min(1).max(100),
+  amount: z.number().positive().max(10000),
+  unit: z.string().min(1).max(30),
+  notes: z.string().max(120).nullable().optional()
+});
 
-  server.registerTool('generate_meal_plan', {
-    description: 'Generate and save a new MealPilot meal plan using the configured OpenAI account.',
+const mealInput = z.object({
+  mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
+  name: z.string().min(1).max(120),
+  calories: z.number().int().min(50).max(2500),
+  servings: z.number().int().min(1).max(20).optional(),
+  prepMinutes: z.number().int().min(0).max(480),
+  cookMinutes: z.number().int().min(0).max(720),
+  ingredients: z.array(ingredientInput).min(1).max(40),
+  instructions: z.array(z.string().min(1).max(500)).min(1).max(20),
+  chefNote: z.string().max(300).nullable().optional()
+});
+
+const planInput = z.object({
+  title: z.string().min(1).max(120),
+  summary: z.string().max(600).default(''),
+  targetCalories: z.number().int().min(800).max(8000).optional(),
+  servings: z.number().int().min(1).max(20).optional(),
+  days: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    meals: z.array(mealInput).min(1).max(6)
+  })).min(1).max(14)
+});
+
+const preferencesInput = z.object({
+  calorieTarget: z.number().int().min(800).max(8000).optional(),
+  days: z.number().int().min(1).max(14).optional(),
+  servings: z.number().int().min(1).max(20).optional(),
+  mealTypes: z.array(z.enum(['breakfast', 'lunch', 'dinner', 'snack'])).min(1).max(4).optional(),
+  dietaryStyle: z.string().max(120).optional(),
+  allergies: z.string().max(1000).optional(),
+  avoidFoods: z.string().max(1000).optional(),
+  maxTotalMinutes: z.number().int().min(5).max(480).optional(),
+  budget: z.string().max(300).optional(),
+  customInstructions: z.string().max(3000).optional()
+});
+
+function buildMcpServer() {
+  const server = new McpServer({ name: 'mealpilot', version: '0.2.0' });
+
+  server.registerTool('get_mealpilot_context', {
+    description: 'Call this before creating a meal plan. Returns the user\'s saved calorie target, serving count, dietary constraints, pantry, cooking-time limit, budget guidance, and a generation brief. After you create the plan, call save_meal_plan to store it in MealPilot.',
     inputSchema: z.object({
-      days: z.number().int().min(1).max(14).optional(),
-      calorieTarget: z.number().int().min(800).max(8000).optional(),
-      servings: z.number().int().min(1).max(20).optional(),
-      startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      dietaryStyle: z.string().max(120).optional(),
-      allergies: z.string().max(1000).optional(),
-      avoidFoods: z.string().max(1000).optional(),
-      pantry: z.string().max(3000).optional(),
-      maxTotalMinutes: z.number().int().min(5).max(480).optional(),
-      budget: z.string().max(300).optional(),
-      customInstructions: z.string().max(3000).optional()
+      startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
     })
-  }, async (args) => {
-    const stored = getSettings({ includeSecret: true });
-    const settings = sanitizeSettings(args, stored);
-    const startDate = args.startDate || new Date().toISOString().slice(0, 10);
-    const plan = await generatePlanWithAI(settings, startDate, stored.apiKey);
-    savePlan(plan);
-    return asText(plan);
+  }, async ({ startDate }) => {
+    const settings = getSettings();
+    return asText({
+      preferences: settings,
+      generationPrompt: buildGenerationPrompt(settings, { startDate }),
+      workflow: [
+        'Generate the meal plan yourself using these preferences.',
+        'Treat allergies as hard exclusions.',
+        'Use calorie estimates per serving and ingredient quantities for the configured total servings.',
+        'Call save_meal_plan with the completed structured plan.'
+      ]
+    });
   });
 
+  server.registerTool('get_preferences', {
+    description: 'Read the user\'s saved MealPilot planning preferences. No API key is used or stored by MealPilot.',
+    inputSchema: z.object({})
+  }, async () => asText(getSettings()));
+
+  server.registerTool('update_preferences', {
+    description: 'Update the user\'s MealPilot planning preferences, excluding pantry contents. Use update_pantry for pantry changes.',
+    inputSchema: preferencesInput
+  }, async (args) => asText(updateSettings(args)));
+
+  server.registerTool('get_pantry', {
+    description: 'Read the pantry / ingredients the user already has and wants prioritized in future meal plans.',
+    inputSchema: z.object({})
+  }, async () => asText({ pantry: getSettings().pantry }));
+
+  server.registerTool('update_pantry', {
+    description: 'Replace the saved pantry text used for future meal-plan generation.',
+    inputSchema: z.object({ pantry: z.string().max(3000) })
+  }, async ({ pantry }) => asText({ pantry: updatePantry(pantry).pantry }));
+
   server.registerTool('list_meal_plans', {
-    description: 'List recently saved MealPilot plans.',
+    description: 'List recently saved MealPilot plans and their IDs.',
     inputSchema: z.object({ limit: z.number().int().min(1).max(100).optional() })
   }, async ({ limit }) => asText(listPlans(limit || 25)));
 
   server.registerTool('get_meal_plan', {
-    description: 'Get a complete saved MealPilot plan by ID.',
+    description: 'Read a complete saved MealPilot plan by plan ID, including meal IDs needed for replacement.',
     inputSchema: z.object({ planId: z.string().min(1) })
   }, async ({ planId }) => {
     const plan = getPlan(planId);
@@ -72,7 +147,7 @@ function buildMcpServer() {
   });
 
   server.registerTool('get_grocery_list', {
-    description: 'Build a combined grocery list for a saved MealPilot plan.',
+    description: 'Return a combined grocery list for a saved plan. Repeated ingredients with matching units are merged.',
     inputSchema: z.object({ planId: z.string().min(1) })
   }, async ({ planId }) => {
     const plan = getPlan(planId);
@@ -80,42 +155,38 @@ function buildMcpServer() {
     return asText(buildGroceryList(plan));
   });
 
+  server.registerTool('save_meal_plan', {
+    description: 'Save a meal plan that YOU already generated. MealPilot does not call an AI provider. First read MealPilot context/preferences, generate the meals yourself, then pass the complete structured plan here. Ingredient amounts should cover all configured servings; calories are per person/per serving.',
+    inputSchema: planInput
+  }, async (args) => {
+    const settings = getSettings();
+    const normalized = normalizeExternalPlan(args, sanitizeSettings({
+      ...settings,
+      calorieTarget: args.targetCalories ?? settings.calorieTarget,
+      servings: args.servings ?? settings.servings,
+      days: args.days.length
+    }, settings));
+    return asText(savePlan(normalized));
+  });
+
   server.registerTool('replace_meal', {
-    description: 'Replace one meal in an existing saved plan while keeping the day near its calorie target.',
+    description: 'Replace one meal with a replacement meal that YOU already generated. This tool does not call AI. Read the plan first, create a replacement with similar calories unless the user asked otherwise, then save it here.',
     inputSchema: z.object({
       planId: z.string().min(1),
       mealId: z.string().min(1),
-      notes: z.string().max(1000).optional()
+      replacement: mealInput
     })
-  }, async ({ planId, mealId, notes }) => {
+  }, async ({ planId, mealId, replacement }) => {
     const plan = getPlan(planId);
     if (!plan) throw new Error('Plan not found.');
-    const settings = getSettings({ includeSecret: true });
-    const updated = await replaceMealWithAI({ plan, mealId, notes, settings, apiKey: settings.apiKey });
-    savePlan(updated);
-    return asText(updated);
+    const updated = replaceMealWithData(plan, mealId, replacement);
+    return asText(savePlan(updated));
   });
 
-  server.registerTool('get_preferences', {
-    description: 'Read MealPilot meal-planning preferences. Secrets are never returned.',
-    inputSchema: z.object({})
-  }, async () => asText(getSettings()));
-
-  server.registerTool('update_preferences', {
-    description: 'Update MealPilot meal-planning preferences. This cannot change the OpenAI API key.',
-    inputSchema: z.object({
-      calorieTarget: z.number().int().min(800).max(8000).optional(),
-      days: z.number().int().min(1).max(14).optional(),
-      servings: z.number().int().min(1).max(20).optional(),
-      dietaryStyle: z.string().max(120).optional(),
-      allergies: z.string().max(1000).optional(),
-      avoidFoods: z.string().max(1000).optional(),
-      pantry: z.string().max(3000).optional(),
-      maxTotalMinutes: z.number().int().min(5).max(480).optional(),
-      budget: z.string().max(300).optional(),
-      customInstructions: z.string().max(3000).optional()
-    })
-  }, async (args) => asText(updateSettings(args)));
+  server.registerTool('delete_meal_plan', {
+    description: 'Permanently delete a saved MealPilot plan by ID.',
+    inputSchema: z.object({ planId: z.string().min(1) })
+  }, async ({ planId }) => asText({ deleted: deletePlan(planId), planId }));
 
   return server;
 }
@@ -131,7 +202,9 @@ export async function closeMcp() {
   await handler.close();
 }
 
-export function requireMcpToken(req, res, next) {
+export function requireMcpAuth(req, res, next) {
+  if (getMcpAuthMode() === 'none') return next();
+
   const auth = req.get('authorization') || '';
   const match = /^Bearer\s+(.+)$/i.exec(auth);
   if (!match) {

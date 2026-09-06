@@ -11,71 +11,129 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <button class="brand" data-view-link="generate" aria-label="MealPilot home">
+      <button class="brand" data-view-link="home" aria-label="MealPilot home">
         <span class="brand-mark" aria-hidden="true">M</span>
-        <span><strong>MealPilot</strong><small>AI meal planning on your Umbrel</small></span>
+        <span><strong>MealPilot</strong><small>MCP-first meal planning on Umbrel</small></span>
       </button>
       <nav class="nav" aria-label="Main navigation">
-        <button class="nav-btn active" data-view-link="generate">Generate</button>
+        <button class="nav-btn active" data-view-link="home">Home</button>
         <button class="nav-btn" data-view-link="plans">Saved plans</button>
-        <button class="nav-btn" data-view-link="settings">Settings</button>
+        <button class="nav-btn" data-view-link="preferences">Preferences</button>
+        <button class="nav-btn" data-view-link="mcp">MCP</button>
       </nav>
-      <div id="connectionPill" class="status-pill">Checking setup…</div>
+      <div id="connectionPill" class="status-pill">Checking…</div>
     </header>
 
     <main>
-      <section id="view-generate" class="view active">
+      <section id="view-home" class="view active">
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow">PLAN ONCE · COOK ALL WEEK</p>
-            <h1>Meals that fit your calories, time, and kitchen.</h1>
-            <p class="lede">Tell MealPilot what works for your household. It creates a structured plan with calories, exact ingredient quantities, prep and cook times, directions, and one combined grocery list.</p>
+            <p class="eyebrow">NO OPENAI API KEY REQUIRED</p>
+            <h1>Let your AI make the meals. Let Umbrel remember them.</h1>
+            <p class="lede">MealPilot is now an MCP-first meal planner. Your AI client reads your calorie target, pantry, allergies, budget, and cooking limits, creates the plan itself, then saves the finished plan back to your Umbrel.</p>
           </div>
           <div class="hero-stat-card">
-            <div><span>Plan length</span><strong id="heroDays">7 days</strong></div>
+            <div><span>Default plan</span><strong id="heroDays">7 days</strong></div>
             <div><span>Target</span><strong id="heroCalories">2,000 cal</strong></div>
             <div><span>Max meal time</span><strong id="heroTime">40 min</strong></div>
           </div>
         </div>
 
         <div class="workspace-grid">
-          <form id="generatorForm" class="panel generator-panel">
+          <section class="panel generator-panel">
             <div class="panel-heading">
-              <div><p class="eyebrow">NEW PLAN</p><h2>Build your week</h2></div>
-              <button type="button" class="ghost-btn small" id="resetFormBtn">Reset</button>
+              <div><p class="eyebrow">START A PLAN</p><h2>Use MCP or copy a ready-made prompt</h2></div>
+              <span class="status-pill good">API-key free</span>
             </div>
 
-            <div class="form-grid three">
-              <label>Daily calories
-                <input id="calorieTarget" name="calorieTarget" type="number" min="800" max="8000" step="50" required />
-              </label>
-              <label>Days
-                <input id="days" name="days" type="number" min="1" max="14" required />
-              </label>
-              <label>Servings
-                <input id="servings" name="servings" type="number" min="1" max="20" required />
-              </label>
+            <div class="workflow-steps">
+              <div><span>1</span><div><strong>Save your preferences</strong><p>Calories, servings, allergens, pantry ingredients, cooking time, and budget stay on Umbrel.</p></div></div>
+              <div><span>2</span><div><strong>Ask your AI</strong><p>With MCP, the client reads MealPilot directly. Without MCP write access, copy the generated prompt below.</p></div></div>
+              <div><span>3</span><div><strong>Save the structured plan</strong><p>Write-capable MCP clients call <code>save_meal_plan</code>. Otherwise paste the JSON response into Import.</p></div></div>
             </div>
 
-            <div class="form-grid two">
-              <label>Start date
-                <input id="startDate" name="startDate" type="date" required />
+            <div class="form-grid two prompt-controls">
+              <label>Plan start date
+                <input id="promptStartDate" type="date" />
               </label>
-              <label>Maximum meal time
-                <div class="input-suffix"><input id="maxTotalMinutes" name="maxTotalMinutes" type="number" min="5" max="480" required /><span>min</span></div>
+              <label>Prompt mode
+                <select id="promptMode">
+                  <option value="full">Full generation prompt</option>
+                  <option value="short">Short instruction</option>
+                </select>
               </label>
             </div>
 
-            <fieldset>
-              <legend>Meals each day</legend>
-              <div class="check-row">
-                <label class="chip-check"><input type="checkbox" name="mealTypes" value="breakfast" checked /><span>Breakfast</span></label>
-                <label class="chip-check"><input type="checkbox" name="mealTypes" value="lunch" checked /><span>Lunch</span></label>
-                <label class="chip-check"><input type="checkbox" name="mealTypes" value="dinner" checked /><span>Dinner</span></label>
-                <label class="chip-check"><input type="checkbox" name="mealTypes" value="snack" checked /><span>Snack</span></label>
-              </div>
-            </fieldset>
+            <div class="button-row">
+              <button id="buildPromptBtn" class="primary-btn" type="button">Build ChatGPT prompt</button>
+              <button id="copyPromptBtn" class="ghost-btn" type="button" disabled>Copy prompt</button>
+              <button class="ghost-btn" type="button" data-view-link="mcp">MCP setup</button>
+            </div>
+            <div id="promptMessage" class="message hidden" role="status"></div>
+            <label id="promptPreviewWrap" class="hidden">Generated prompt
+              <textarea id="promptPreview" class="wide-textarea" rows="14" readonly></textarea>
+            </label>
+          </section>
 
+          <aside class="panel side-panel">
+            <p class="eyebrow">WHY THIS VERSION</p>
+            <h3>ChatGPT is the model. MealPilot is the memory.</h3>
+            <ul class="feature-list">
+              <li><span>01</span><div><strong>No AI provider key</strong><p>MealPilot never calls OpenAI, Anthropic, Google, or another model API.</p></div></li>
+              <li><span>02</span><div><strong>Local preferences</strong><p>Your planning profile and pantry live in SQLite on your Umbrel.</p></div></li>
+              <li><span>03</span><div><strong>Structured plans</strong><p>Calories, exact ingredients, prep time, cook time, and instructions are stored as data.</p></div></li>
+              <li><span>04</span><div><strong>Combined groceries</strong><p>MealPilot merges repeated ingredients across the whole plan.</p></div></li>
+              <li><span>05</span><div><strong>Any MCP-capable AI</strong><p>The server is model-agnostic and uses Streamable HTTP MCP.</p></div></li>
+            </ul>
+          </aside>
+        </div>
+
+        <section class="panel import-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">MANUAL FALLBACK</p><h2>Import a plan from ChatGPT</h2></div>
+            <span class="status-pill">No connector needed</span>
+          </div>
+          <p class="muted">Paste the JSON returned by the prompt above. MealPilot accepts plain JSON or a JSON markdown code block, validates the important fields, assigns IDs, recalculates totals, and saves it locally.</p>
+          <label>Meal-plan JSON
+            <textarea id="importText" class="wide-textarea" rows="10" placeholder='{"title":"My Week","summary":"...","targetCalories":2000,"servings":1,"days":[...]}'></textarea>
+          </label>
+          <div class="button-row">
+            <button id="importBtn" class="primary-btn" type="button">Import & save plan</button>
+            <button id="clearImportBtn" class="ghost-btn" type="button">Clear</button>
+          </div>
+          <div id="importMessage" class="message hidden" role="status"></div>
+        </section>
+
+        <section id="planResult" class="result-section hidden" aria-live="polite"></section>
+      </section>
+
+      <section id="view-plans" class="view">
+        <div class="page-heading">
+          <div><p class="eyebrow">LIBRARY</p><h1>Saved meal plans</h1><p>Plans generated by your AI are stored locally on this Umbrel.</p></div>
+          <button class="primary-btn" data-view-link="home">New plan</button>
+        </div>
+        <div id="plansList" class="plans-list"></div>
+      </section>
+
+      <section id="view-preferences" class="view">
+        <div class="page-heading">
+          <div><p class="eyebrow">PLANNING PROFILE</p><h1>Preferences</h1><p>These are the defaults MCP clients receive before generating a plan.</p></div>
+        </div>
+
+        <form id="preferencesForm" class="panel generator-panel profile-panel">
+          <div class="form-grid three">
+            <label>Daily calories
+              <input id="calorieTarget" name="calorieTarget" type="number" min="800" max="8000" step="50" required />
+            </label>
+            <label>Default days
+              <input id="days" name="days" type="number" min="1" max="14" required />
+            </label>
+            <label>Servings
+              <input id="servings" name="servings" type="number" min="1" max="20" required />
+            </label>
+          </div>
+
+          <div class="form-grid two">
             <label>Dietary style
               <select id="dietaryStyle" name="dietaryStyle">
                 <option>No preference</option>
@@ -89,125 +147,110 @@
                 <option>Dairy free</option>
               </select>
             </label>
-
-            <div class="form-grid two">
-              <label>Allergies / hard exclusions
-                <textarea id="allergies" name="allergies" rows="3" placeholder="e.g. peanuts, shellfish"></textarea>
-              </label>
-              <label>Foods to avoid
-                <textarea id="avoidFoods" name="avoidFoods" rows="3" placeholder="e.g. mushrooms, olives"></textarea>
-              </label>
-            </div>
-
-            <label>Use what I already have
-              <textarea id="pantry" name="pantry" rows="4" placeholder="Chicken breast, eggs, rice, cheddar, tortillas, frozen broccoli…"></textarea>
-              <span class="field-help">MealPilot will prioritize these ingredients where it makes sense.</span>
+            <label>Maximum meal time
+              <div class="input-suffix"><input id="maxTotalMinutes" name="maxTotalMinutes" type="number" min="5" max="480" required /><span>min</span></div>
             </label>
+          </div>
 
-            <div class="form-grid two">
-              <label>Budget guidance
-                <input id="budget" name="budget" type="text" placeholder="e.g. Keep the week near $100" />
-              </label>
-              <label>Extra instructions
-                <input id="customInstructions" name="customInstructions" type="text" placeholder="e.g. Leftovers for Tuesday lunch" />
-              </label>
+          <fieldset>
+            <legend>Meals each day</legend>
+            <div class="check-row">
+              <label class="chip-check"><input type="checkbox" name="mealTypes" value="breakfast" /><span>Breakfast</span></label>
+              <label class="chip-check"><input type="checkbox" name="mealTypes" value="lunch" /><span>Lunch</span></label>
+              <label class="chip-check"><input type="checkbox" name="mealTypes" value="dinner" /><span>Dinner</span></label>
+              <label class="chip-check"><input type="checkbox" name="mealTypes" value="snack" /><span>Snack</span></label>
             </div>
+          </fieldset>
 
-            <div id="generateError" class="message error hidden" role="alert"></div>
-            <button id="generateBtn" class="primary-btn wide" type="submit"><span class="spark">✦</span> Generate meal plan</button>
-            <p class="fine-print">Generated nutrition values are estimates. Verify ingredient labels and dietary needs that matter to you.</p>
-          </form>
+          <div class="form-grid two">
+            <label>Allergies / hard exclusions
+              <textarea id="allergies" name="allergies" rows="3" placeholder="e.g. peanuts, shellfish"></textarea>
+              <span class="field-help">The generation brief tells the AI to treat these as hard exclusions.</span>
+            </label>
+            <label>Foods to avoid
+              <textarea id="avoidFoods" name="avoidFoods" rows="3" placeholder="e.g. mushrooms, olives"></textarea>
+            </label>
+          </div>
 
-          <aside class="panel side-panel">
-            <p class="eyebrow">WHAT YOU GET</p>
-            <h3>More than a list of recipe names.</h3>
-            <ul class="feature-list">
-              <li><span>01</span><div><strong>Calories by meal</strong><p>Daily totals are recalculated by MealPilot after generation.</p></div></li>
-              <li><span>02</span><div><strong>Scaled ingredients</strong><p>Quantities are generated for the number of servings you select.</p></div></li>
-              <li><span>03</span><div><strong>Real cooking time</strong><p>Prep, cook, and total time are visible on every meal.</p></div></li>
-              <li><span>04</span><div><strong>Combined grocery list</strong><p>Repeated ingredients are merged across the whole plan.</p></div></li>
-              <li><span>05</span><div><strong>Swap one meal</strong><p>Regenerate a single meal without throwing away the rest of the week.</p></div></li>
-            </ul>
-          </aside>
+          <label>Pantry / use what I already have
+            <textarea id="pantry" name="pantry" rows="5" placeholder="Chicken breast, eggs, rice, cheddar, tortillas, frozen broccoli…"></textarea>
+          </label>
+
+          <div class="form-grid two">
+            <label>Budget guidance
+              <input id="budget" name="budget" type="text" placeholder="e.g. Keep the week near $100" />
+            </label>
+            <label>Extra instructions
+              <input id="customInstructions" name="customInstructions" type="text" placeholder="e.g. Leftovers for Tuesday lunch" />
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="savePreferencesBtn" class="primary-btn" type="submit">Save preferences</button>
+            <button id="resetPreferencesBtn" class="ghost-btn" type="button">Reload saved values</button>
+          </div>
+          <div id="preferencesMessage" class="message hidden" role="status"></div>
+        </form>
+      </section>
+
+      <section id="view-mcp" class="view">
+        <div class="page-heading">
+          <div><p class="eyebrow">MODEL CONTEXT PROTOCOL</p><h1>MCP server</h1><p>Connect an AI client to MealPilot without giving MealPilot an AI API key.</p></div>
         </div>
 
-        <section id="planResult" class="result-section hidden" aria-live="polite"></section>
-      </section>
-
-      <section id="view-plans" class="view">
-        <div class="page-heading"><div><p class="eyebrow">LIBRARY</p><h1>Saved meal plans</h1><p>Every generated plan is saved locally on your Umbrel.</p></div><button class="primary-btn" data-view-link="generate">New plan</button></div>
-        <div id="plansList" class="plans-list"></div>
-      </section>
-
-      <section id="view-settings" class="view">
-        <div class="page-heading"><div><p class="eyebrow">CONFIGURATION</p><h1>Settings & MCP</h1><p>Your plans stay on Umbrel. OpenAI only receives the information needed to generate a plan.</p></div></div>
-
         <div class="settings-grid">
-          <form id="settingsForm" class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">OPENAI</p><h2>Model connection</h2></div><span id="apiKeyBadge" class="status-pill"></span></div>
-            <label>Model
-              <select id="settingsModel" name="model">
-                <option value="gpt-5.6-luna">GPT-5.6 Luna — economical</option>
-                <option value="gpt-5.6-terra">GPT-5.6 Terra — balanced</option>
-                <option value="gpt-5.6-sol">GPT-5.6 Sol — highest quality</option>
-              </select>
-            </label>
-            <label>OpenAI API key
-              <input id="openaiApiKey" name="apiKey" type="password" autocomplete="off" placeholder="sk-…" />
-              <span class="field-help">Leave blank to keep the currently stored key. An OPENAI_API_KEY environment variable takes priority.</span>
-            </label>
-            <div class="button-row">
-              <button class="primary-btn" type="submit">Save settings</button>
-              <button class="ghost-btn" id="testOpenAiBtn" type="button">Test connection</button>
-              <button class="danger-text-btn" id="removeKeyBtn" type="button">Remove stored key</button>
-            </div>
-            <div id="settingsMessage" class="message hidden" role="status"></div>
-          </form>
-
           <div class="panel">
-            <div class="panel-heading"><div><p class="eyebrow">MCP SERVER</p><h2>Connect an AI client</h2></div><span class="status-pill good">Enabled</span></div>
-            <p class="muted">MealPilot exposes generation, saved plans, grocery lists, meal replacement, and preferences over Streamable HTTP MCP.</p>
+            <div class="panel-heading"><div><p class="eyebrow">CONNECTION</p><h2>Streamable HTTP</h2></div><span class="status-pill good">Enabled</span></div>
             <label>MCP endpoint
               <div class="copy-field"><input id="mcpEndpoint" readonly /><button type="button" data-copy-target="mcpEndpoint">Copy</button></div>
             </label>
-            <label>Bearer token
-              <div class="copy-field"><input id="mcpToken" type="password" readonly /><button type="button" data-copy-target="mcpToken">Copy</button></div>
-            </label>
-            <div class="button-row"><button class="ghost-btn" id="toggleTokenBtn" type="button">Show token</button><button class="danger-text-btn" id="rotateTokenBtn" type="button">Rotate token</button></div>
-            <div class="code-note"><strong>Authorization header</strong><code>Authorization: Bearer &lt;your-token&gt;</code></div>
-            <p class="fine-print">Treat this token like a password. The /mcp route bypasses Umbrel login so non-browser MCP clients can connect, but MealPilot rejects requests without this token.</p>
+            <div id="tokenSection">
+              <label>Bearer token
+                <div class="copy-field"><input id="mcpToken" type="password" readonly /><button type="button" data-copy-target="mcpToken">Copy</button></div>
+              </label>
+              <div class="button-row">
+                <button class="ghost-btn" id="toggleTokenBtn" type="button">Show token</button>
+                <button class="danger-text-btn" id="rotateTokenBtn" type="button">Rotate token</button>
+              </div>
+            </div>
+            <div id="noAuthNotice" class="message hidden"></div>
+            <div class="code-note"><strong>Transport</strong><code>Streamable HTTP · /mcp</code></div>
+            <p class="fine-print">The default token protects the MCP route because Umbrel's proxy must allow machine clients through without its browser login. Never expose a tokenless MCP endpoint directly to the public internet.</p>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">AI WORKFLOW</p><h2>What the client should do</h2></div></div>
+            <ol class="instruction-list mcp-flow">
+              <li>Call <code>get_mealpilot_context</code>.</li>
+              <li>Generate the meal plan itself using the returned preferences and pantry.</li>
+              <li>Call <code>save_meal_plan</code> with the structured result.</li>
+              <li>Later, use <code>get_meal_plan</code> and <code>replace_meal</code> for targeted changes.</li>
+            </ol>
+            <div class="notice"><strong>No OpenAI key lives here.</strong><p>MealPilot v0.2 contains no Responses API call, no model selector, and no API-key endpoint.</p></div>
           </div>
         </div>
 
         <div class="panel mcp-tools-panel">
-          <p class="eyebrow">EXPOSED TOOLS</p>
+          <div class="panel-heading"><div><p class="eyebrow">TOOLS</p><h2>Exposed MCP actions</h2></div></div>
           <div class="tool-grid">
-            <div><code>generate_meal_plan</code><p>Create and save a plan.</p></div>
+            <div><code>get_mealpilot_context</code><p>Preferences + pantry + generation brief.</p></div>
+            <div><code>get_preferences</code><p>Read planning defaults.</p></div>
+            <div><code>update_preferences</code><p>Change planning defaults.</p></div>
+            <div><code>get_pantry</code><p>Read pantry ingredients.</p></div>
+            <div><code>update_pantry</code><p>Replace pantry contents.</p></div>
             <div><code>list_meal_plans</code><p>List saved plans.</p></div>
             <div><code>get_meal_plan</code><p>Read a complete plan.</p></div>
-            <div><code>get_grocery_list</code><p>Combine ingredients.</p></div>
-            <div><code>replace_meal</code><p>Swap one meal with AI.</p></div>
-            <div><code>get_preferences</code><p>Read non-secret preferences.</p></div>
-            <div><code>update_preferences</code><p>Update meal preferences.</p></div>
+            <div><code>get_grocery_list</code><p>Combine repeated ingredients.</p></div>
+            <div><code>save_meal_plan</code><p>Save AI-generated structured data.</p></div>
+            <div><code>replace_meal</code><p>Save an AI-generated replacement meal.</p></div>
+            <div><code>delete_meal_plan</code><p>Delete a saved plan.</p></div>
           </div>
         </div>
       </section>
     </main>
   </div>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <div id="modalBackdrop" class="modal-backdrop hidden" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <div class="panel-heading"><div><p class="eyebrow">REPLACE MEAL</p><h2 id="modalTitle">Try something different</h2></div><button id="closeModalBtn" class="icon-btn" type="button" aria-label="Close">×</button></div>
-      <p id="replaceMealName" class="muted"></p>
-      <label>What should change?
-        <textarea id="replaceNotes" rows="4" placeholder="e.g. Make it vegetarian, use chicken instead, something faster…"></textarea>
-      </label>
-      <div id="replaceError" class="message error hidden"></div>
-      <div class="button-row end"><button id="cancelReplaceBtn" class="ghost-btn" type="button">Cancel</button><button id="confirmReplaceBtn" class="primary-btn" type="button">Replace meal</button></div>
-    </div>
-  </div>
-
-  <script type="module" src="/app.js"></script>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js" defer></script>
 </body>
 </html>

@@ -15,7 +15,6 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     json TEXT NOT NULL,
-    openai_api_key TEXT,
     updated_at TEXT NOT NULL
   );
 
@@ -34,21 +33,20 @@ db.exec(`
 
 const existing = db.prepare('SELECT id FROM settings WHERE id = 1').get();
 if (!existing) {
-  db.prepare('INSERT INTO settings (id, json, openai_api_key, updated_at) VALUES (1, ?, NULL, ?)')
+  db.prepare('INSERT INTO settings (id, json, updated_at) VALUES (1, ?, ?)')
     .run(JSON.stringify(defaultSettings), new Date().toISOString());
 }
 
-export function getSettings({ includeSecret = false } = {}) {
-  const row = db.prepare('SELECT json, openai_api_key FROM settings WHERE id = 1').get();
-  const settings = sanitizeSettings(JSON.parse(row.json || '{}'));
-  const envKey = process.env.OPENAI_API_KEY?.trim();
-  const storedKey = row.openai_api_key?.trim();
-  return {
-    ...settings,
-    hasApiKey: Boolean(envKey || storedKey),
-    apiKeySource: envKey ? 'environment' : storedKey ? 'stored' : 'none',
-    ...(includeSecret ? { apiKey: envKey || storedKey || '' } : {})
-  };
+// v0.1 had an openai_api_key column. Existing SQLite tables keep that column after
+// upgrade, so clear it if present; new v0.2 databases never create it.
+const settingsColumns = db.prepare('PRAGMA table_info(settings)').all().map((column) => column.name);
+if (settingsColumns.includes('openai_api_key')) {
+  db.prepare('UPDATE settings SET openai_api_key = NULL WHERE id = 1 AND openai_api_key IS NOT NULL').run();
+}
+
+export function getSettings() {
+  const row = db.prepare('SELECT json FROM settings WHERE id = 1').get();
+  return sanitizeSettings(JSON.parse(row?.json || '{}'));
 }
 
 export function updateSettings(input) {
@@ -59,22 +57,14 @@ export function updateSettings(input) {
   return getSettings();
 }
 
-export function setOpenAiKey(apiKey) {
-  const key = String(apiKey || '').trim();
-  if (!key.startsWith('sk-')) throw new Error('OpenAI API key should begin with sk-.');
-  db.prepare('UPDATE settings SET openai_api_key = ?, updated_at = ? WHERE id = 1')
-    .run(key, new Date().toISOString());
-  return getSettings();
-}
-
-export function clearOpenAiKey() {
-  db.prepare('UPDATE settings SET openai_api_key = NULL, updated_at = ? WHERE id = 1')
-    .run(new Date().toISOString());
-  return getSettings();
+export function updatePantry(pantry) {
+  return updateSettings({ pantry: String(pantry || '') });
 }
 
 export function savePlan(plan) {
   const now = new Date().toISOString();
+  const createdAt = plan.createdAt || now;
+  const updated = { ...plan, createdAt, updatedAt: now };
   db.prepare(`
     INSERT INTO plans (id, title, target_calories, servings, created_at, updated_at, json)
     VALUES (@id, @title, @targetCalories, @servings, @createdAt, @updatedAt, @json)
@@ -85,15 +75,15 @@ export function savePlan(plan) {
       updated_at = excluded.updated_at,
       json = excluded.json
   `).run({
-    id: plan.id,
-    title: plan.title,
-    targetCalories: plan.targetCalories,
-    servings: plan.servings,
-    createdAt: plan.createdAt || now,
-    updatedAt: now,
-    json: JSON.stringify(plan)
+    id: updated.id,
+    title: updated.title,
+    targetCalories: updated.targetCalories,
+    servings: updated.servings,
+    createdAt: updated.createdAt,
+    updatedAt: updated.updatedAt,
+    json: JSON.stringify(updated)
   });
-  return plan;
+  return updated;
 }
 
 export function getPlan(id) {

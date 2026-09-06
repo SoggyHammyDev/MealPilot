@@ -1,14 +1,14 @@
 {
   "name": "mealpilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "AI meal planning for Umbrel with OpenAI and MCP",
+  "description": "MCP-first meal planning for Umbrel without an AI API key",
   "scripts": {
     "start": "node src/server.js",
     "dev": "NODE_ENV=development node --watch src/server.js",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/server.js && node --check src/db.js && node --check src/openai.js && node --check src/meal-plan.js && node --check src/mcp.js && node --check public/app.js"
+    "check": "node --check src/server.js && node --check src/db.js && node --check src/meal-plan.js && node --check src/mcp.js && node --check public/app.js"
   },
   "engines": {
     "node": ">=22"

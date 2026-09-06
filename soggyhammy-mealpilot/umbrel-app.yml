@@ -2,34 +2,34 @@ manifestVersion: 1.1
 id: soggyhammy-mealpilot
 category: automation
 name: MealPilot
-version: "0.1.0"
-tagline: AI meal plans with calories, ingredients, cooking time, and grocery lists
+version: "0.2.0"
+tagline: MCP-first meal planning with no AI API key required
 description: >-
-  MealPilot is a private meal-planning app for your Umbrel. Set a daily calorie
-  target, household serving count, dietary preferences, allergies, foods to
-  avoid, pantry ingredients, budget guidance, and maximum cooking time. MealPilot
-  uses your OpenAI API key to generate structured multi-day meal plans with
-  calories per meal, scaled ingredient quantities, preparation time, cooking
-  time, and step-by-step instructions. Plans are saved locally on your Umbrel,
-  and repeated ingredients are combined into a single grocery list. You can also
-  replace one meal without regenerating the entire plan. An authenticated
-  Streamable HTTP MCP endpoint exposes plan generation, saved plans, grocery
-  lists, meal replacement, and preferences to compatible AI clients.
+  MealPilot is a private, MCP-first meal planner for your Umbrel. Save your
+  daily calorie target, serving count, dietary preferences, allergies, foods
+  to avoid, pantry ingredients, budget guidance, and maximum cooking time.
+  A compatible AI client can read that context over Streamable HTTP MCP,
+  generate the meal plan itself, and save structured meals back to MealPilot.
+  Each stored meal includes calories, ingredient quantities, preparation time,
+  cooking time, and step-by-step instructions. MealPilot combines repeated
+  ingredients into one grocery list and can replace individual meals when an
+  MCP client supplies a new structured replacement. MealPilot does not call an
+  AI model API and does not require or store an OpenAI API key. A copy/paste
+  JSON import workflow is included for AI clients that cannot write over MCP.
 developer: SoggyHammyDev
-website: https://github.com/SoggyHammyDev/mealpilot
-repo: https://github.com/SoggyHammyDev/mealpilot
-support: https://github.com/SoggyHammyDev/mealpilot/issues
+website: https://github.com/SoggyHammyDev/MealPilot
+repo: https://github.com/SoggyHammyDev/MealPilot
+support: https://github.com/SoggyHammyDev/MealPilot/issues
 dependencies: []
+gallery: []
 port: 4788
-gallery:
-  - 1.jpg
-  - 2.jpg
-  - 3.jpg
 path: ""
 defaultUsername: ""
 defaultPassword: ""
 torOnly: false
 releaseNotes: >-
-  Initial release. Generate 1-14 day meal plans, save plans locally, aggregate
-  grocery lists, replace individual meals, configure OpenAI models, and connect
-  compatible AI clients through authenticated MCP.
+  v0.2 removes the OpenAI API dependency completely. MealPilot is now MCP-first:
+  AI clients generate plans themselves and save them to Umbrel through structured
+  MCP tools. Added manual ChatGPT prompt generation and JSON import as a no-key
+  fallback, pantry-specific tools, plan deletion, structured meal replacement,
+  and automatic removal of any legacy v0.1 stored OpenAI key.
