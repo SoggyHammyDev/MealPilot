@@ -2,6 +2,8 @@ const state = {
   settings: null,
   currentPlan: null,
   prompt: '',
+  aiStatus: null,
+  generationJob: null,
   toastTimer: null
 };
 
@@ -110,6 +112,7 @@ function fillPreferences(settings) {
   $('#calorieTarget').value = settings.calorieTarget;
   $('#days').value = settings.days;
   $('#servings').value = settings.servings;
+  $('#aiModel').value = settings.aiModel || 'qwen3:4b-instruct';
   $('#dietaryStyle').value = settings.dietaryStyle;
   $('#allergies').value = settings.allergies;
   $('#avoidFoods').value = settings.avoidFoods;
@@ -125,6 +128,7 @@ function readPreferencesForm() {
     calorieTarget: Number($('#calorieTarget').value),
     days: Number($('#days').value),
     servings: Number($('#servings').value),
+    aiModel: $('#aiModel').value,
     dietaryStyle: $('#dietaryStyle').value,
     allergies: $('#allergies').value.trim(),
     avoidFoods: $('#avoidFoods').value.trim(),
@@ -199,7 +203,7 @@ async function loadPlans() {
   try {
     const plans = await api('/api/plans?limit=100');
     if (!plans.length) {
-      root.innerHTML = '<div class="empty-state">No plans yet. Use MCP or import your first AI-generated plan.</div>';
+      root.innerHTML = '<div class="empty-state">No plans yet. Generate one locally, use MCP, or import a plan.</div>';
       return;
     }
     root.innerHTML = plans.map((plan) => `
@@ -231,6 +235,150 @@ async function loadPlans() {
   }
 }
 
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = n;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) { value /= 1024; index += 1; }
+  return `${value.toFixed(index >= 3 ? 1 : 0)} ${units[index]}`;
+}
+
+function setGenerationProgress(message, percent = null) {
+  const wrap = $('#generationProgress');
+  wrap.classList.remove('hidden');
+  $('#generationProgressText').textContent = message;
+  const bar = $('#generationProgressBar');
+  if (percent == null) {
+    bar.style.width = '35%';
+    bar.classList.add('indeterminate');
+  } else {
+    bar.classList.remove('indeterminate');
+    bar.style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+  }
+}
+
+function hideGenerationProgress() {
+  $('#generationProgress').classList.add('hidden');
+  $('#generationProgressBar').classList.remove('indeterminate');
+}
+
+async function loadAiStatus() {
+  const pill = $('#aiStatusPill');
+  const installButton = $('#installAiBtn');
+  try {
+    const model = state.settings?.aiModel || 'qwen3:4b-instruct';
+    const status = await api(`/api/ai/status?model=${encodeURIComponent(model)}`);
+    state.aiStatus = status;
+    $('#localAiModel').textContent = status.model;
+    if (!status.connected) {
+      pill.textContent = 'Ollama starting…';
+      pill.className = 'status-pill bad';
+      $('#localAiDetail').textContent = status.error || 'Local AI is not reachable yet.';
+      installButton.classList.add('hidden');
+      return status;
+    }
+    if (status.installed) {
+      const installed = status.models.find((item) => item.name === status.model);
+      pill.textContent = 'Local AI ready';
+      pill.className = 'status-pill good';
+      $('#localAiDetail').textContent = installed
+        ? `${installed.parameterSize || 'Local model'} · ${formatBytes(installed.size)}${installed.quantization ? ` · ${installed.quantization}` : ''}`
+        : 'Model installed and ready.';
+      installButton.classList.add('hidden');
+    } else {
+      pill.textContent = 'Model download needed';
+      pill.className = 'status-pill';
+      $('#localAiDetail').textContent = 'One-time model download required before the first plan.';
+      installButton.classList.remove('hidden');
+    }
+    return status;
+  } catch (error) {
+    pill.textContent = 'Local AI error';
+    pill.className = 'status-pill bad';
+    $('#localAiDetail').textContent = error.message;
+    return null;
+  }
+}
+
+async function waitForModelInstall(model) {
+  const installButton = $('#installAiBtn');
+  installButton.disabled = true;
+  $('#generateLocalBtn').disabled = true;
+  clearMessage($('#generationMessage'));
+  setGenerationProgress(`Starting download for ${model}…`, 0);
+  try {
+    await api('/api/ai/pull', { method: 'POST', body: JSON.stringify({ model }) });
+    for (let attempts = 0; attempts < 1800; attempts += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const status = await api(`/api/ai/status?model=${encodeURIComponent(model)}`);
+      state.aiStatus = status;
+      if (status.installed) {
+        setGenerationProgress('Local AI model installed.', 100);
+        await loadAiStatus();
+        return true;
+      }
+      const pull = status.pull || {};
+      if (pull.status === 'error') throw new Error(pull.error || 'Model download failed.');
+      const text = pull.status && pull.status !== 'idle' ? pull.status : 'Downloading model…';
+      setGenerationProgress(text, pull.total > 0 ? pull.percent : null);
+    }
+    throw new Error('Model download is taking longer than expected. You can leave MealPilot open and try Refresh shortly.');
+  } finally {
+    installButton.disabled = false;
+    $('#generateLocalBtn').disabled = false;
+  }
+}
+
+async function ensureLocalModel() {
+  const model = state.settings?.aiModel || 'qwen3:4b-instruct';
+  const status = await loadAiStatus();
+  if (!status?.connected) throw new Error(status?.error || 'Local AI is not ready yet.');
+  if (status.installed) return true;
+  return waitForModelInstall(model);
+}
+
+async function pollGenerationJob(id) {
+  for (let attempts = 0; attempts < 1800; attempts += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const job = await api(`/api/generate/${encodeURIComponent(id)}`);
+    state.generationJob = job;
+    if (job.status === 'done') return job.plan;
+    if (job.status === 'error') throw new Error(job.error || 'Local generation failed.');
+    setGenerationProgress(job.message || 'Generating your plan…', null);
+  }
+  throw new Error('Meal generation is taking longer than expected.');
+}
+
+async function generateLocalPlan() {
+  const button = $('#generateLocalBtn');
+  clearMessage($('#generationMessage'));
+  button.disabled = true;
+  try {
+    await ensureLocalModel();
+    setGenerationProgress('Starting local generation…', null);
+    const job = await api('/api/generate', {
+      method: 'POST',
+      body: JSON.stringify({ startDate: $('#promptStartDate').value })
+    });
+    state.generationJob = job;
+    const plan = await pollGenerationJob(job.id);
+    setGenerationProgress('Meal plan ready.', 100);
+    setMessage($('#generationMessage'), `Generated locally with ${plan.model || state.settings.aiModel} and saved to Umbrel.`, 'success');
+    await renderPlan(plan);
+    toast('Meal plan generated');
+    $('#planResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(hideGenerationProgress, 1200);
+  } catch (error) {
+    setMessage($('#generationMessage'), error.message, 'error');
+    hideGenerationProgress();
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function loadSettings() {
   try {
     state.settings = await api('/api/settings');
@@ -238,6 +386,7 @@ async function loadSettings() {
     syncHero();
     $('#connectionPill').textContent = 'Umbrel ready';
     $('#connectionPill').className = 'status-pill good';
+    await loadAiStatus();
   } catch (error) {
     $('#connectionPill').textContent = 'Connection error';
     $('#connectionPill').className = 'status-pill bad';
@@ -275,7 +424,8 @@ $('#preferencesForm').addEventListener('submit', async (event) => {
     state.settings = await api('/api/settings', { method: 'PUT', body: JSON.stringify(payload) });
     fillPreferences(state.settings);
     syncHero();
-    setMessage($('#preferencesMessage'), 'Preferences saved. MCP clients will see these values on their next read.', 'success');
+    await loadAiStatus();
+    setMessage($('#preferencesMessage'), 'Preferences saved. Local AI and MCP clients will use these values.', 'success');
   } catch (error) {
     setMessage($('#preferencesMessage'), error.message, 'error');
   } finally {
@@ -286,6 +436,26 @@ $('#preferencesForm').addEventListener('submit', async (event) => {
 $('#resetPreferencesBtn').addEventListener('click', () => {
   if (state.settings) fillPreferences(state.settings);
   toast('Reloaded saved preferences');
+});
+
+
+$('#generateLocalBtn').addEventListener('click', () => { void generateLocalPlan(); });
+
+$('#installAiBtn').addEventListener('click', async () => {
+  try {
+    const model = state.settings?.aiModel || 'qwen3:4b-instruct';
+    await waitForModelInstall(model);
+    setMessage($('#generationMessage'), 'Local AI model is installed and ready.', 'success');
+    setTimeout(hideGenerationProgress, 1000);
+  } catch (error) {
+    setMessage($('#generationMessage'), error.message, 'error');
+    hideGenerationProgress();
+  }
+});
+
+$('#refreshAiBtn').addEventListener('click', async () => {
+  await loadAiStatus();
+  toast('Local AI status refreshed');
 });
 
 $('#buildPromptBtn').addEventListener('click', async () => {

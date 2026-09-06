@@ -13,7 +13,8 @@ export const defaultSettings = {
   pantry: '',
   maxTotalMinutes: 40,
   budget: '',
-  customInstructions: ''
+  customInstructions: '',
+  aiModel: 'qwen3:4b-instruct'
 };
 
 export const mealSchema = {
@@ -110,7 +111,8 @@ export function sanitizeSettings(input = {}, base = defaultSettings) {
     pantry: String(merged.pantry || '').slice(0, 3000),
     maxTotalMinutes: clampInt(merged.maxTotalMinutes, 5, 480, base.maxTotalMinutes),
     budget: String(merged.budget || '').slice(0, 300),
-    customInstructions: String(merged.customInstructions || '').slice(0, 3000)
+    customInstructions: String(merged.customInstructions || '').slice(0, 3000),
+    aiModel: String(merged.aiModel || base.aiModel || 'qwen3:4b-instruct').trim().slice(0, 160) || 'qwen3:4b-instruct'
   };
 }
 

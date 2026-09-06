@@ -38,7 +38,7 @@ if (!existing) {
 }
 
 // v0.1 had an openai_api_key column. Existing SQLite tables keep that column after
-// upgrade, so clear it if present; new v0.2 databases never create it.
+// upgrade, so clear it if present; new v0.3 databases never create it.
 const settingsColumns = db.prepare('PRAGMA table_info(settings)').all().map((column) => column.name);
 if (settingsColumns.includes('openai_api_key')) {
   db.prepare('UPDATE settings SET openai_api_key = NULL WHERE id = 1 AND openai_api_key IS NOT NULL').run();

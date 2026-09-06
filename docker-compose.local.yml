@@ -7,6 +7,20 @@ services:
       PORT: "3000"
       DATA_DIR: "/data"
       MCP_AUTH_MODE: "token"
+      OLLAMA_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "qwen3:4b-instruct"
     volumes:
       - ./data:/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.33.3
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_KEEP_ALIVE: "10m"
+    volumes:
+      - ./ollama-data:/root/.ollama
     restart: unless-stopped

@@ -10,12 +10,13 @@ import {
   sanitizeSettings
 } from '../src/meal-plan.js';
 
-test('sanitizeSettings clamps values and no longer carries a model setting', () => {
-  const result = sanitizeSettings({ calorieTarget: 99999, days: 0, servings: 99, maxTotalMinutes: 1, model: 'gpt-anything' });
+test('sanitizeSettings clamps values and carries a local AI model setting', () => {
+  const result = sanitizeSettings({ calorieTarget: 99999, days: 0, servings: 99, maxTotalMinutes: 1, aiModel: 'qwen3:1.7b', model: 'gpt-anything' });
   assert.equal(result.calorieTarget, 8000);
   assert.equal(result.days, 1);
   assert.equal(result.servings, 20);
   assert.equal(result.maxTotalMinutes, 5);
+  assert.equal(result.aiModel, 'qwen3:1.7b');
   assert.equal('model' in result, false);
 });
 

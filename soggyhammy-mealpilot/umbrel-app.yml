@@ -2,20 +2,20 @@ manifestVersion: 1.1
 id: soggyhammy-mealpilot
 category: automation
 name: MealPilot
-version: "0.2.0"
-tagline: MCP-first meal planning with no AI API key required
+version: "0.3.0"
+tagline: Private local-AI meal planning with no API key required
 description: >-
-  MealPilot is a private, MCP-first meal planner for your Umbrel. Save your
-  daily calorie target, serving count, dietary preferences, allergies, foods
-  to avoid, pantry ingredients, budget guidance, and maximum cooking time.
-  A compatible AI client can read that context over Streamable HTTP MCP,
-  generate the meal plan itself, and save structured meals back to MealPilot.
-  Each stored meal includes calories, ingredient quantities, preparation time,
-  cooking time, and step-by-step instructions. MealPilot combines repeated
-  ingredients into one grocery list and can replace individual meals when an
-  MCP client supplies a new structured replacement. MealPilot does not call an
-  AI model API and does not require or store an OpenAI API key. A copy/paste
-  JSON import workflow is included for AI clients that cannot write over MCP.
+  MealPilot is a private meal planner for Umbrel with built-in local AI and
+  optional MCP integration. Set your daily calorie target, serving count,
+  dietary preferences, allergies, foods to avoid, pantry ingredients, budget
+  guidance, and maximum cooking time, then generate a complete meal plan
+  directly in the app. MealPilot runs Ollama locally alongside the web app and
+  uses structured JSON output so each saved meal includes calories, exact
+  ingredient quantities, preparation time, cooking time, and step-by-step
+  instructions. Repeated ingredients are combined into a grocery list. Ollama
+  cloud features are disabled, and MealPilot does not require or store an
+  OpenAI API key. The built-in Streamable HTTP MCP server remains available for
+  ChatGPT and other compatible AI clients to read preferences and manage plans.
 developer: SoggyHammyDev
 website: https://github.com/SoggyHammyDev/MealPilot
 repo: https://github.com/SoggyHammyDev/MealPilot
@@ -28,8 +28,9 @@ defaultUsername: ""
 defaultPassword: ""
 torOnly: false
 releaseNotes: >-
-  v0.2 removes the OpenAI API dependency completely. MealPilot is now MCP-first:
-  AI clients generate plans themselves and save them to Umbrel through structured
-  MCP tools. Added manual ChatGPT prompt generation and JSON import as a no-key
-  fallback, pantry-specific tools, plan deletion, structured meal replacement,
-  and automatic removal of any legacy v0.1 stored OpenAI key.
+  v0.3 adds one-click local meal-plan generation using an Ollama container.
+  The first generation can download a local Qwen model automatically, after
+  which generation stays on the Umbrel with no AI API key. Added local-AI
+  status and download progress, model selection, structured-output validation,
+  persistent Ollama model storage, and local-only Ollama configuration. MCP and
+  manual JSON import remain available.

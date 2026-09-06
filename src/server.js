@@ -18,6 +18,13 @@ import {
   sanitizeSettings
 } from './meal-plan.js';
 import {
+  getGenerationJob,
+  getLocalAiStatus,
+  getModelPullState,
+  startGenerationJob,
+  startModelPull
+} from './local-ai.js';
+import {
   closeMcp,
   getMcpAuthMode,
   getMcpToken,
@@ -37,7 +44,7 @@ app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, version: '0.2.0', mode: 'mcp-first', apiKeyRequired: false });
+  res.json({ ok: true, version: '0.3.0', mode: 'local-ai+mcp', apiKeyRequired: false });
 });
 
 app.get('/api/settings', (_req, res) => res.json(getSettings()));
@@ -57,6 +64,56 @@ app.post('/api/generation-prompt', (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+
+app.get('/api/ai/status', async (req, res, next) => {
+  try {
+    const settings = getSettings();
+    res.json(await getLocalAiStatus(req.query.model || settings.aiModel));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/ai/pull', (req, res, next) => {
+  try {
+    const settings = getSettings();
+    const model = req.body?.model || settings.aiModel;
+    res.status(202).json({ model, pull: startModelPull(model) });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/ai/pull', (req, res) => {
+  const settings = getSettings();
+  const model = req.query.model || settings.aiModel;
+  res.json({ model, pull: getModelPullState(model) });
+});
+
+app.post('/api/generate', async (req, res, next) => {
+  try {
+    const stored = getSettings();
+    const settings = sanitizeSettings(req.body?.overrides || {}, stored);
+    const startDate = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.startDate || '') ? req.body.startDate : undefined;
+    const ai = await getLocalAiStatus(settings.aiModel);
+    if (!ai.connected) {
+      const error = new Error(ai.error || 'Local AI is not reachable yet.');
+      error.status = 503;
+      throw error;
+    }
+    if (!ai.installed) {
+      const error = new Error(`Local AI model ${settings.aiModel} is not installed.`);
+      error.status = 409;
+      error.code = 'MODEL_NOT_INSTALLED';
+      throw error;
+    }
+    const job = startGenerationJob({ settings, startDate, model: settings.aiModel, savePlan });
+    res.status(202).json(job);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/generate/:jobId', (req, res) => {
+  const job = getGenerationJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Generation job not found.' });
+  res.json(job);
+});
+
 app.get('/api/mcp-config', (req, res) => {
   const authMode = getMcpAuthMode();
   res.json({
@@ -64,7 +121,7 @@ app.get('/api/mcp-config', (req, res) => {
     authMode,
     token: authMode === 'token' ? getMcpToken() : null,
     transport: 'Streamable HTTP',
-    version: '0.2.0',
+    version: '0.3.0',
     note: authMode === 'none'
       ? 'MCP authentication is disabled. Use this only behind a trusted secure tunnel or authenticated private reverse proxy.'
       : 'Send the bearer token in the Authorization header.'
@@ -123,11 +180,11 @@ app.get('/{*splat}', (_req, res) => res.sendFile(path.join(publicDir, 'index.htm
 app.use((error, _req, res, _next) => {
   console.error(error);
   const status = error?.statusCode || error?.status || 500;
-  res.status(status).json({ error: error?.message || 'Unexpected server error.' });
+  res.status(status).json({ error: error?.message || 'Unexpected server error.', code: error?.code || undefined, job: error?.job || undefined });
 });
 
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`MealPilot v0.2.0 listening on http://0.0.0.0:${port}`);
+  console.log(`MealPilot v0.3.0 listening on http://0.0.0.0:${port}`);
   console.log(`MCP auth mode: ${getMcpAuthMode()}`);
 });
 

@@ -1,14 +1,14 @@
 {
   "name": "mealpilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "MCP-first meal planning for Umbrel without an AI API key",
+  "description": "Local-AI + MCP meal planning for Umbrel with no AI API key required",
   "scripts": {
     "start": "node src/server.js",
     "dev": "NODE_ENV=development node --watch src/server.js",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/server.js && node --check src/db.js && node --check src/meal-plan.js && node --check src/mcp.js && node --check public/app.js"
+    "check": "node --check src/server.js && node --check src/db.js && node --check src/meal-plan.js && node --check src/local-ai.js && node --check src/mcp.js && node --check public/app.js"
   },
   "engines": {
     "node": ">=22"
