@@ -130,20 +130,40 @@ function dateAtOffset(startDate, offset) {
   return base.toISOString().slice(0, 10);
 }
 
-const mealDaySchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['date', 'meals'],
-  properties: {
-    date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
-    meals: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 6,
-      items: mealSchema
+function mealDaySchemaFor(settings) {
+  const maxMinutes = Math.max(5, Number(settings?.maxTotalMinutes || 40));
+  const boundedMealSchema = {
+    ...mealSchema,
+    properties: {
+      ...mealSchema.properties,
+      prepMinutes: {
+        ...mealSchema.properties.prepMinutes,
+        maximum: maxMinutes,
+        description: `Prep minutes. prepMinutes + cookMinutes MUST be <= ${maxMinutes}.`
+      },
+      cookMinutes: {
+        ...mealSchema.properties.cookMinutes,
+        maximum: maxMinutes,
+        description: `Cook minutes. prepMinutes + cookMinutes MUST be <= ${maxMinutes}.`
+      }
     }
-  }
-};
+  };
+
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['date', 'meals'],
+    properties: {
+      date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+      meals: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 6,
+        items: boundedMealSchema
+      }
+    }
+  };
+}
 
 function systemPrompt() {
   return [
@@ -168,7 +188,8 @@ function dayPrompt(settings, { date, dayNumber, totalDays, usedMeals = [] }) {
     `Allergies / hard exclusions: ${settings.allergies || 'None provided'}.`,
     `Foods to avoid: ${settings.avoidFoods || 'None provided'}.`,
     `Pantry ingredients to prioritize: ${settings.pantry || 'None provided'}.`,
-    `Maximum prep + cook time for any single meal: ${settings.maxTotalMinutes} minutes.`,
+    `HARD LIMIT: For EVERY meal, prepMinutes + cookMinutes must be ${settings.maxTotalMinutes} minutes or less.`,
+    `Before returning JSON, explicitly verify the arithmetic for each meal. Example: with a ${settings.maxTotalMinutes}-minute limit, 15 prep + 30 cook = 45 is INVALID; choose a faster recipe or faster method instead.`,
     `Budget guidance: ${settings.budget || 'None provided'}.`,
     `Extra instructions: ${settings.customInstructions || 'None provided'}.`,
     usedMeals.length ? `Avoid repeating these meal names from earlier days: ${usedMeals.join('; ')}.` : 'Favor variety across the day.',
@@ -188,7 +209,7 @@ function validateDay(rawDay, settings, expectedDate) {
   for (const meal of rawMeals) {
     const totalMinutes = Number(meal?.prepMinutes || 0) + Number(meal?.cookMinutes || 0);
     if (totalMinutes > settings.maxTotalMinutes) {
-      throw new Error(`${meal?.name || 'A meal'} exceeds the ${settings.maxTotalMinutes}-minute meal-time limit.`);
+      throw new Error(`${meal?.name || 'A meal'} is ${Number(meal?.prepMinutes || 0)} min prep + ${Number(meal?.cookMinutes || 0)} min cook = ${totalMinutes} minutes, which exceeds the ${settings.maxTotalMinutes}-minute meal-time limit.`);
     }
   }
   const totalCalories = rawMeals.reduce((sum, meal) => sum + Number(meal?.calories || 0), 0);
@@ -199,29 +220,43 @@ function validateDay(rawDay, settings, expectedDate) {
 
 async function generateDay(settings, { date, dayNumber, totalDays, model, usedMeals }) {
   let lastError;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  let previousContent = null;
+  const prompt = dayPrompt(settings, { date, dayNumber, totalDays, usedMeals });
+  const format = mealDaySchemaFor(settings);
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
-      const prompt = dayPrompt(settings, { date, dayNumber, totalDays, usedMeals });
+      const messages = [
+        { role: 'system', content: systemPrompt() },
+        { role: 'user', content: prompt }
+      ];
+
+      if (attempt > 1) {
+        if (previousContent) messages.push({ role: 'assistant', content: previousContent });
+        messages.push({
+          role: 'user',
+          content: [
+            `That day failed validation: ${lastError?.message || 'invalid output'}`,
+            'Return a corrected COMPLETE day object, not an explanation.',
+            `The ${settings.maxTotalMinutes}-minute meal-time limit is a hard constraint: prepMinutes + cookMinutes must be <= ${settings.maxTotalMinutes} for every single meal.`,
+            'If a recipe cannot realistically fit the limit, REPLACE that meal with a genuinely faster recipe or method instead of inventing an unrealistic time estimate.',
+            'Re-check every required meal type, calorie total, ingredient list, and time sum before answering.'
+          ].join('\n')
+        });
+      }
+
       const response = await ollamaFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
-          messages: [
-            { role: 'system', content: systemPrompt() },
-            {
-              role: 'user',
-              content: attempt === 1
-                ? prompt
-                : `${prompt}\n\nYour previous response failed validation: ${lastError?.message || 'invalid output'}. Correct the issue and regenerate this day.`
-            }
-          ],
+          messages,
           stream: false,
           think: false,
-          format: mealDaySchema,
+          format,
           keep_alive: '10m',
           options: {
-            temperature: attempt === 1 ? 0.25 : 0,
+            temperature: attempt === 1 ? 0.25 : 0.12,
             num_ctx: 16384,
             num_predict: 3500
           }
@@ -230,6 +265,7 @@ async function generateDay(settings, { date, dayNumber, totalDays, model, usedMe
       const body = await response.json();
       const content = body?.message?.content;
       if (!content) throw new Error('Local model returned an empty response.');
+      previousContent = content;
       const raw = JSON.parse(content);
       return {
         day: validateDay(raw, settings, date),

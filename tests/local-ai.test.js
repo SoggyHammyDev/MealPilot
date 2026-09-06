@@ -82,3 +82,54 @@ test('local generator accepts structured Ollama output and marks the source loca
   assert.equal(plan.days[0].totalCalories, 1000);
   assert.equal(plan.days[0].meals[0].totalMinutes, 25);
 });
+
+test('local generator repairs a meal that exceeds the configured time limit', async () => {
+  let calls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    assert.match(String(url), /\/api\/chat$/);
+    calls += 1;
+    const body = JSON.parse(options.body);
+    assert.equal(body.format.properties.meals.items.properties.prepMinutes.maximum, 40);
+    assert.equal(body.format.properties.meals.items.properties.cookMinutes.maximum, 40);
+
+    const meal = calls === 1
+      ? {
+          mealType: 'dinner', name: 'Slow Quinoa Bowl', calories: 1000, servings: 1,
+          prepMinutes: 15, cookMinutes: 30,
+          ingredients: [{ name: 'quinoa', amount: 1, unit: 'cup', notes: null }],
+          instructions: ['Cook and serve.'], chefNote: null
+        }
+      : {
+          mealType: 'dinner', name: 'Quick Couscous Bowl', calories: 1000, servings: 1,
+          prepMinutes: 10, cookMinutes: 20,
+          ingredients: [{ name: 'couscous', amount: 1, unit: 'cup', notes: null }],
+          instructions: ['Cook and serve.'], chefNote: null
+        };
+
+    if (calls === 2) {
+      const retryText = body.messages.map((m) => m.content).join('\n');
+      assert.match(retryText, /15 min prep \+ 30 min cook = 45 minutes/);
+      assert.match(retryText, /REPLACE that meal/);
+    }
+
+    return new Response(JSON.stringify({
+      message: { role: 'assistant', content: JSON.stringify({ date: '2026-09-06', meals: [meal] }) },
+      prompt_eval_count: 100,
+      eval_count: 200,
+      total_duration: 1234
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+
+  const plan = await generateLocalMealPlan({
+    calorieTarget: 1000,
+    days: 1,
+    servings: 1,
+    mealTypes: ['dinner'],
+    maxTotalMinutes: 40,
+    aiModel: 'qwen3:4b-instruct'
+  }, { startDate: '2026-09-06' });
+
+  assert.equal(calls, 2);
+  assert.equal(plan.days[0].meals[0].name, 'Quick Couscous Bowl');
+  assert.equal(plan.days[0].meals[0].totalMinutes, 30);
+});

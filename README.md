@@ -166,14 +166,14 @@ It now runs automatically on pushes to `main`. For a normal `main` push, it read
 soggyhammy-mealpilot/umbrel-app.yml
 ```
 
-For v0.3.0 it publishes:
+For v0.3.1 it publishes:
 
 ```text
-ghcr.io/soggyhammydev/mealpilot:0.3.0
+ghcr.io/soggyhammydev/mealpilot:0.3.1
 ghcr.io/soggyhammydev/mealpilot:latest
 ```
 
-You can still run the workflow manually or publish by pushing a `v0.3.0` Git tag.
+You can still run the workflow manually or publish by pushing a `v0.3.1` Git tag.
 
 ## Umbrel install
 
@@ -188,7 +188,7 @@ soggyhammy-mealpilot/docker-compose.yml
 The app image is:
 
 ```text
-ghcr.io/soggyhammydev/mealpilot:0.3.0
+ghcr.io/soggyhammydev/mealpilot:0.3.1
 ```
 
 and the local inference service uses:

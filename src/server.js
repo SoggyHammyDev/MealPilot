@@ -44,7 +44,7 @@ app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, version: '0.3.0', mode: 'local-ai+mcp', apiKeyRequired: false });
+  res.json({ ok: true, version: '0.3.1', mode: 'local-ai+mcp', apiKeyRequired: false });
 });
 
 app.get('/api/settings', (_req, res) => res.json(getSettings()));
@@ -121,7 +121,7 @@ app.get('/api/mcp-config', (req, res) => {
     authMode,
     token: authMode === 'token' ? getMcpToken() : null,
     transport: 'Streamable HTTP',
-    version: '0.3.0',
+    version: '0.3.1',
     note: authMode === 'none'
       ? 'MCP authentication is disabled. Use this only behind a trusted secure tunnel or authenticated private reverse proxy.'
       : 'Send the bearer token in the Authorization header.'
@@ -184,7 +184,7 @@ app.use((error, _req, res, _next) => {
 });
 
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`MealPilot v0.3.0 listening on http://0.0.0.0:${port}`);
+  console.log(`MealPilot v0.3.1 listening on http://0.0.0.0:${port}`);
   console.log(`MCP auth mode: ${getMcpAuthMode()}`);
 });
 

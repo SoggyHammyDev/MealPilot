@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 — Time-limit repair reliability
+
+- Fixed local generation aborting after a small model returned a meal whose prep + cook time exceeded the configured limit.
+- The Ollama JSON schema now dynamically bounds prep and cook fields to the user's configured meal-time limit.
+- Retry prompts now include the previous generated day and the exact failed time arithmetic.
+- MealPilot explicitly tells the model to replace a recipe rather than invent unrealistic prep/cook estimates when it cannot fit the limit.
+- Increased validation attempts from 2 to 4 and avoids deterministic retry loops.
+
 ## 0.3.0 — Local AI generation
 
 - Added a bundled Ollama service to the Umbrel app stack.

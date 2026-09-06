@@ -2,7 +2,7 @@ manifestVersion: 1.1
 id: soggyhammy-mealpilot
 category: automation
 name: MealPilot
-version: "0.3.0"
+version: "0.3.1"
 tagline: Private local-AI meal planning with no API key required
 description: >-
   MealPilot is a private meal planner for Umbrel with built-in local AI and
@@ -28,9 +28,8 @@ defaultUsername: ""
 defaultPassword: ""
 torOnly: false
 releaseNotes: >-
-  v0.3 adds one-click local meal-plan generation using an Ollama container.
-  The first generation can download a local Qwen model automatically, after
-  which generation stays on the Umbrel with no AI API key. Added local-AI
-  status and download progress, model selection, structured-output validation,
-  persistent Ollama model storage, and local-only Ollama configuration. MCP and
-  manual JSON import remain available.
+  v0.3.1 improves local generation reliability when a meal violates the maximum
+  prep + cook time. MealPilot now gives Ollama dynamic time bounds, includes the
+  failed output during repair, clearly identifies the offending time arithmetic,
+  and retries up to four times while instructing the model to replace recipes
+  that cannot realistically fit the limit. No API key is required.

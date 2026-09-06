@@ -91,7 +91,7 @@ const preferencesInput = z.object({
 });
 
 function buildMcpServer() {
-  const server = new McpServer({ name: 'mealpilot', version: '0.3.0' });
+  const server = new McpServer({ name: 'mealpilot', version: '0.3.1' });
 
   server.registerTool('get_mealpilot_context', {
     description: 'Call this before creating a meal plan. Returns the user\'s saved calorie target, serving count, dietary constraints, pantry, cooking-time limit, budget guidance, and a generation brief. After you create the plan, call save_meal_plan to store it in MealPilot.',

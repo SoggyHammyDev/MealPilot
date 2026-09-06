@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Docker image version (for example 0.3.0)"
+        description: "Docker image version (for example 0.3.1)"
         required: true
-        default: "0.3.0"
+        default: "0.3.1"
         type: string
 
 permissions:
