@@ -133,3 +133,77 @@ test('local generator repairs a meal that exceeds the configured time limit', as
   assert.equal(plan.days[0].meals[0].name, 'Quick Couscous Bowl');
   assert.equal(plan.days[0].meals[0].totalMinutes, 30);
 });
+
+test('local generator repairs a day that misses the calorie target', async () => {
+  let calls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    assert.match(String(url), /\/api\/chat$/);
+    calls += 1;
+    const body = JSON.parse(options.body);
+    const promptText = body.messages.map((m) => m.content).join('\n');
+    assert.match(promptText, /breakfast: about 417 calories/);
+    assert.match(promptText, /dinner: about 583 calories/);
+
+    const meals = calls === 1
+      ? [
+          {
+            mealType: 'breakfast', name: 'Light Toast', calories: 150, servings: 1,
+            prepMinutes: 5, cookMinutes: 0,
+            ingredients: [{ name: 'whole grain bread', amount: 1, unit: 'slice', notes: null }],
+            instructions: ['Toast and serve.'], chefNote: null
+          },
+          {
+            mealType: 'dinner', name: 'Small Chicken Bowl', calories: 450, servings: 1,
+            prepMinutes: 10, cookMinutes: 15,
+            ingredients: [{ name: 'chicken breast', amount: 4, unit: 'oz', notes: null }],
+            instructions: ['Cook and serve.'], chefNote: null
+          }
+        ]
+      : [
+          {
+            mealType: 'breakfast', name: 'Egg Toast', calories: 417, servings: 1,
+            prepMinutes: 5, cookMinutes: 5,
+            ingredients: [
+              { name: 'whole grain bread', amount: 1, unit: 'slice', notes: null },
+              { name: 'egg', amount: 2, unit: 'item', notes: null }
+            ],
+            instructions: ['Cook eggs and serve with toast.'], chefNote: null
+          },
+          {
+            mealType: 'dinner', name: 'Chicken Rice Bowl', calories: 583, servings: 1,
+            prepMinutes: 10, cookMinutes: 15,
+            ingredients: [
+              { name: 'chicken breast', amount: 6, unit: 'oz', notes: null },
+              { name: 'rice', amount: 1.5, unit: 'cup', notes: 'cooked' }
+            ],
+            instructions: ['Cook chicken and serve over rice.'], chefNote: null
+          }
+        ];
+
+    if (calls === 2) {
+      assert.match(promptText, /totals 600 calories/);
+      assert.match(promptText, /ADD about 400 calories/);
+      assert.match(promptText, /Do NOT fix calorie validation by changing calorie numbers alone/);
+    }
+
+    return new Response(JSON.stringify({
+      message: { role: 'assistant', content: JSON.stringify({ date: '2026-09-06', meals }) },
+      prompt_eval_count: 100,
+      eval_count: 200,
+      total_duration: 1234
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+
+  const plan = await generateLocalMealPlan({
+    calorieTarget: 1000,
+    days: 1,
+    servings: 1,
+    mealTypes: ['breakfast', 'dinner'],
+    maxTotalMinutes: 40,
+    aiModel: 'qwen3:4b-instruct'
+  }, { startDate: '2026-09-06' });
+
+  assert.equal(calls, 2);
+  assert.equal(plan.days[0].totalCalories, 1000);
+  assert.equal(plan.days[0].meals.length, 2);
+});

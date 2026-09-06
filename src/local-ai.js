@@ -178,12 +178,40 @@ function systemPrompt() {
   ].join(' ');
 }
 
+
+function calorieBudgetForMealTypes(settings) {
+  const weights = { breakfast: 0.25, lunch: 0.30, dinner: 0.35, snack: 0.10 };
+  const types = settings.mealTypes;
+  const weightTotal = types.reduce((sum, type) => sum + (weights[type] || 1), 0);
+  let remaining = settings.calorieTarget;
+  const targets = {};
+
+  types.forEach((type, index) => {
+    if (index === types.length - 1) {
+      targets[type] = remaining;
+      return;
+    }
+    const target = Math.max(50, Math.round(settings.calorieTarget * (weights[type] || 1) / weightTotal));
+    targets[type] = target;
+    remaining -= target;
+  });
+
+  return targets;
+}
+
+function calorieBudgetText(settings) {
+  const budget = calorieBudgetForMealTypes(settings);
+  return settings.mealTypes.map((type) => `${type}: about ${budget[type]} calories`).join('; ');
+}
+
 function dayPrompt(settings, { date, dayNumber, totalDays, usedMeals = [] }) {
   return [
     `Generate day ${dayNumber} of ${totalDays} for ${date}.`,
-    `Daily calorie target per person: ${settings.calorieTarget}. Aim within about 10% when practical.`,
+    `Daily calorie target per person: ${settings.calorieTarget}. Aim as close to this total as possible.`,
+    `CALORIE BUDGET PER MEAL: ${calorieBudgetText(settings)}. These targets add up to exactly ${settings.calorieTarget} calories per person.`,
+    `Keep each meal reasonably close to its calorie budget and verify the day total by adding every meal calorie value before returning JSON.`,
     `Servings: ${settings.servings}.`,
-    `Required meal types: ${settings.mealTypes.join(', ')}. Include each required type exactly once unless a snack reasonably needs a second entry.`,
+    `Required meal types: ${settings.mealTypes.join(', ')}. Include each required type exactly once and do not add extra meals.`,
     `Dietary style: ${settings.dietaryStyle}.`,
     `Allergies / hard exclusions: ${settings.allergies || 'None provided'}.`,
     `Foods to avoid: ${settings.avoidFoods || 'None provided'}.`,
@@ -202,9 +230,15 @@ function validateDay(rawDay, settings, expectedDate) {
   if (!rawDay || typeof rawDay !== 'object') throw new Error('The model did not return a day object.');
   if (rawDay.date !== expectedDate) throw new Error(`Expected date ${expectedDate}, received ${rawDay.date || 'none'}.`);
   const rawMeals = Array.isArray(rawDay.meals) ? rawDay.meals : [];
-  const types = new Set(rawMeals.map((meal) => meal?.mealType));
+  if (rawMeals.length !== settings.mealTypes.length) {
+    throw new Error(`Day ${expectedDate} must contain exactly ${settings.mealTypes.length} meals (${settings.mealTypes.join(', ')}), but the model returned ${rawMeals.length}.`);
+  }
+  const counts = new Map();
+  for (const meal of rawMeals) counts.set(meal?.mealType, (counts.get(meal?.mealType) || 0) + 1);
   for (const type of settings.mealTypes) {
-    if (!types.has(type)) throw new Error(`Day ${expectedDate} is missing ${type}.`);
+    const count = counts.get(type) || 0;
+    if (count === 0) throw new Error(`Day ${expectedDate} is missing ${type}.`);
+    if (count !== 1) throw new Error(`Day ${expectedDate} must contain exactly one ${type}, but the model returned ${count}.`);
   }
   for (const meal of rawMeals) {
     const totalMinutes = Number(meal?.prepMinutes || 0) + Number(meal?.cookMinutes || 0);
@@ -213,8 +247,14 @@ function validateDay(rawDay, settings, expectedDate) {
     }
   }
   const totalCalories = rawMeals.reduce((sum, meal) => sum + Number(meal?.calories || 0), 0);
+  const minCalories = Math.round(settings.calorieTarget * 0.8);
+  const maxCalories = Math.round(settings.calorieTarget * 1.2);
   const deviation = Math.abs(totalCalories - settings.calorieTarget) / settings.calorieTarget;
-  if (deviation > 0.2) throw new Error(`Day ${expectedDate} is too far from the ${settings.calorieTarget}-calorie target.`);
+  if (deviation > 0.2) {
+    const difference = settings.calorieTarget - totalCalories;
+    const direction = difference > 0 ? `ADD about ${Math.abs(difference)} calories` : `REMOVE about ${Math.abs(difference)} calories`;
+    throw new Error(`Day ${expectedDate} totals ${totalCalories} calories. Target is ${settings.calorieTarget}; acceptable range is ${minCalories}-${maxCalories}. ${direction} by adjusting realistic ingredient portions or replacing meals.`);
+  }
   return rawDay;
 }
 
@@ -240,6 +280,9 @@ async function generateDay(settings, { date, dayNumber, totalDays, model, usedMe
             'Return a corrected COMPLETE day object, not an explanation.',
             `The ${settings.maxTotalMinutes}-minute meal-time limit is a hard constraint: prepMinutes + cookMinutes must be <= ${settings.maxTotalMinutes} for every single meal.`,
             'If a recipe cannot realistically fit the limit, REPLACE that meal with a genuinely faster recipe or method instead of inventing an unrealistic time estimate.',
+            `Calorie budget: ${calorieBudgetText(settings)}. The complete day should total about ${settings.calorieTarget} calories per person.`,
+            `Before answering, add the meal calories yourself and make sure the total is between ${Math.round(settings.calorieTarget * 0.8)} and ${Math.round(settings.calorieTarget * 1.2)}, aiming near ${settings.calorieTarget}.`,
+            'Do NOT fix calorie validation by changing calorie numbers alone. Adjust ingredient quantities/portions so the calorie estimate remains plausible, or replace a meal.',
             'Re-check every required meal type, calorie total, ingredient list, and time sum before answering.'
           ].join('\n')
         });

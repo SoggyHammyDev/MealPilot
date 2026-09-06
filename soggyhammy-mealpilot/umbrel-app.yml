@@ -2,7 +2,7 @@ manifestVersion: 1.1
 id: soggyhammy-mealpilot
 category: automation
 name: MealPilot
-version: "0.3.1"
+version: "0.3.2"
 tagline: Private local-AI meal planning with no API key required
 description: >-
   MealPilot is a private meal planner for Umbrel with built-in local AI and
@@ -28,8 +28,9 @@ defaultUsername: ""
 defaultPassword: ""
 torOnly: false
 releaseNotes: >-
-  v0.3.1 improves local generation reliability when a meal violates the maximum
-  prep + cook time. MealPilot now gives Ollama dynamic time bounds, includes the
-  failed output during repair, clearly identifies the offending time arithmetic,
-  and retries up to four times while instructing the model to replace recipes
-  that cannot realistically fit the limit. No API key is required.
+  v0.3.2 improves calorie-target reliability for small local models. MealPilot
+  now assigns explicit per-meal calorie budgets that add up to the user's daily
+  target, requires exactly one of each selected meal type, and gives Ollama the
+  exact generated total, acceptable range, and calories to add or remove during
+  repair attempts. Calorie repairs must adjust realistic portions or recipes
+  rather than merely changing calorie labels. No API key is required.

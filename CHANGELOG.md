@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — Calorie-target repair reliability
+
+- Added explicit per-meal calorie budgets that sum exactly to the configured daily target.
+- Local prompts now require exactly one of each selected meal type and no extra meals.
+- Calorie validation errors now include the actual day total, acceptable range, and exact calories to add or remove.
+- Retry prompts carry the calorie budget and instruct Ollama to adjust realistic ingredient portions or replace meals instead of merely changing calorie labels.
+- Added regression coverage for an initially under-calorie day that is repaired on retry.
+
 ## 0.3.1 — Time-limit repair reliability
 
 - Fixed local generation aborting after a small model returned a meal whose prep + cook time exceeded the configured limit.
